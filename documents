@@ -1,1 +1,44 @@
 
+How do I commit my kafka source offset manually only after my sink completes successfully in flink?
+
+I hava flink job with source and sink as 2 different kafka topic, I am running this on kubernetes clusters.
+I am using two slotsharing groups so 
+TaskManager1 - source,map operation
+TaskManager2 - sink operation
+
+Now I want to ensure that my offsets of source consumer is committed only after sink is successfull. 
+Because whenever msg pass through TaskManager1 and before it completes sink opertion TaskManager2 goes down abrupty.
+I see that the offset is committed to kafka even though sink is not completed  
+
+I am planning to disable autocommit and 
+1)
+props.put("enable.auto.commit", "false");
+
+2)Manually commit only offset successful pass through sink  
+public class MyCustomSink<T> extends FlinkKafkaProducerBase<T> {
+
+    @Override
+    protected void flush() {}
+ 
+    @Override
+    public void invoke(T OutputPOJO, Context context) throws Exception { }
+}
+
+
+streamSource = env.addSource(new FlinkKafkaConsumer<>("topicA",new MyCustomKafkaDeserializationSchema(),props))
+                .slotSharingGroup("source")
+                .name("mysource")
+                .uid("mysource");
+
+SingleOutputStreamOperator<OutputPOJO> tranformedData =streamSource
+                .map(new CustomMapFunction())
+                .returns(OutputPOJO.class)
+                .slotSharingGroup("source")
+                .name("mymap")
+                .uid("mymap");
+
+tranformedData.addSink(new MyCustomSink("topicB",new SimpleStringSchema(),properties,null))
+                .slotSharingGroup("sink")
+                .setParallelism(2)
+                .name("mysink")
+                .uid("mysink");
